@@ -1,6 +1,7 @@
 """
 Query Parser — Converts natural language to Bedesten API search parameters.
 Uses a single Gemini call (~600 tokens) instead of a multi-iteration agent loop.
+Supports both mevzuat (legislation) and yargı (court decisions) searches.
 """
 
 import json
@@ -8,7 +9,9 @@ from google import genai
 from google.genai import types
 
 
-PARSER_PROMPT = """Sen bir arama sorgusu çıkarıcısın. Kullanıcının doğal dilde yazdığı hukuki soruyu,
+# ── Mevzuat (legislation) parser prompt ──────────────────────────────────────
+
+MEVZUAT_PARSER_PROMPT = """Sen bir arama sorgusu çıkarıcısın. Kullanıcının doğal dilde yazdığı hukuki soruyu,
 Bedesten mevzuat API'si için yapılandırılmış arama parametrelerine dönüştür.
 
 Yanıtını YALNIZCA aşağıdaki JSON formatında ver, başka hiçbir şey yazma:
@@ -46,19 +49,58 @@ Soru: "KVKK'ya göre veri sorumlusunun yükümlülükleri"
 YALNIZCA JSON döndür. Açıklama, yorum veya başka metin yazma."""
 
 
-def parse_query(user_message: str, api_key: str) -> dict:
-    """
-    Parse a natural language legal question into structured search parameters.
-    Returns dict with keys: phrase, title, types, number, exact.
-    Uses ~600 tokens total.
-    """
+# ── Yargı (court decisions) parser prompt ────────────────────────────────────
+
+YARGI_PARSER_PROMPT = """Sen bir arama sorgusu çıkarıcısın. Kullanıcının doğal dilde yazdığı yargı kararı sorusunu,
+Bedesten emsal karar API'si için yapılandırılmış arama parametrelerine dönüştür.
+
+Yanıtını YALNIZCA aşağıdaki JSON formatında ver, başka hiçbir şey yazma:
+
+{
+  "phrase": "arama kelimesi veya ifadesi",
+  "court_types": ["YARGITAYKARARI", "DANISTAYKARAR"],
+  "chamber": "ALL"
+}
+
+Kurallar:
+- phrase: Ana arama terimi. Konunun hukuki özünü yaz.
+- court_types: Uygun mahkeme türlerini seç. Seçenekler:
+  YARGITAYKARARI (Yargıtay kararları), DANISTAYKARAR (Danıştay kararları),
+  YERELHUKUK (yerel mahkeme), ISTINAFHUKUK (istinaf mahkemesi), KYB (kanun yararına bozma).
+  Belli değilse ["YARGITAYKARARI", "DANISTAYKARAR"] yaz.
+- chamber: Daire kodu. Örnekler:
+  H1-H23 = Yargıtay Hukuk Daireleri, C1-C23 = Yargıtay Ceza Daireleri,
+  HGK = Hukuk Genel Kurulu, CGK = Ceza Genel Kurulu,
+  D1-D17 = Danıştay Daireleri, IDDK = İdare Dava Daireleri Kurulu.
+  Belli değilse "ALL" yaz.
+
+Örnekler:
+Soru: "İş kazası tazminatıyla ilgili Yargıtay kararları"
+→ {"phrase": "iş kazası tazminat", "court_types": ["YARGITAYKARARI"], "chamber": "ALL"}
+
+Soru: "Hukuk Genel Kurulu'nun miras hukukuyla ilgili kararları"
+→ {"phrase": "miras hukuku", "court_types": ["YARGITAYKARARI"], "chamber": "HGK"}
+
+Soru: "Danıştay'ın vergi cezasıyla ilgili kararları"
+→ {"phrase": "vergi cezası", "court_types": ["DANISTAYKARAR"], "chamber": "ALL"}
+
+Soru: "Kira uyuşmazlığı emsal kararlar"
+→ {"phrase": "kira uyuşmazlık", "court_types": ["YARGITAYKARARI", "DANISTAYKARAR"], "chamber": "ALL"}
+
+YALNIZCA JSON döndür. Açıklama, yorum veya başka metin yazma."""
+
+
+# ── Shared parsing logic ─────────────────────────────────────────────────────
+
+def _call_gemini(user_message: str, system_prompt: str, api_key: str) -> str:
+    """Make a single Gemini call and return raw text response."""
     client = genai.Client(api_key=api_key)
 
     response = client.models.generate_content(
         model="gemini-2.5-flash",
         contents=[user_message],
         config=types.GenerateContentConfig(
-            system_instruction=PARSER_PROMPT,
+            system_instruction=system_prompt,
             temperature=0.1,
             max_output_tokens=200,
         ),
@@ -72,10 +114,22 @@ def parse_query(user_message: str, api_key: str) -> dict:
         lines = [l for l in lines if not l.strip().startswith("```")]
         text = "\n".join(lines).strip()
 
+    return text
+
+
+# ── Mevzuat query parser ────────────────────────────────────────────────────
+
+def parse_query(user_message: str, api_key: str) -> dict:
+    """
+    Parse a natural language legal question into mevzuat search parameters.
+    Returns dict with keys: phrase, title, types, number, exact.
+    Uses ~600 tokens total.
+    """
+    text = _call_gemini(user_message, MEVZUAT_PARSER_PROMPT, api_key)
+
     try:
         params = json.loads(text)
     except json.JSONDecodeError:
-        # Fallback: use the user's message as a plain search
         params = {
             "phrase": user_message,
             "title": None,
@@ -98,13 +152,55 @@ def parse_query(user_message: str, api_key: str) -> dict:
     return params
 
 
+# ── Yargı query parser ──────────────────────────────────────────────────────
+
+def parse_yargi_query(user_message: str, api_key: str) -> dict:
+    """
+    Parse a natural language court decision question into yargı search parameters.
+    Returns dict with keys: phrase, court_types, chamber.
+    Uses ~600 tokens total.
+    """
+    text = _call_gemini(user_message, YARGI_PARSER_PROMPT, api_key)
+
+    try:
+        params = json.loads(text)
+    except json.JSONDecodeError:
+        params = {
+            "phrase": user_message,
+            "court_types": ["YARGITAYKARARI", "DANISTAYKARAR"],
+            "chamber": "ALL",
+        }
+
+    # Normalize
+    if not params.get("phrase"):
+        params["phrase"] = user_message
+    if not params.get("court_types"):
+        params["court_types"] = ["YARGITAYKARARI", "DANISTAYKARAR"]
+    if not params.get("chamber"):
+        params["chamber"] = "ALL"
+
+    return params
+
+
+# ── Manual param builders ────────────────────────────────────────────────────
+
 def build_manual_params(phrase: str = None, title: str = None, types: list = None,
                         number: str = None, exact: bool = False) -> dict:
-    """Build search params manually (no AI, zero tokens)."""
+    """Build mevzuat search params manually (no AI, zero tokens)."""
     return {
         "phrase": phrase or None,
         "title": title or None,
         "types": types or ["KANUN", "YONETMELIK", "CB_YONETMELIK", "KHK", "KKY", "TEBLIGLER"],
         "number": number or None,
         "exact": exact,
+    }
+
+
+def build_manual_yargi_params(phrase: str = None, court_types: list = None,
+                               chamber: str = "ALL") -> dict:
+    """Build yargı search params manually (no AI, zero tokens)."""
+    return {
+        "phrase": phrase or None,
+        "court_types": court_types or ["YARGITAYKARARI", "DANISTAYKARAR"],
+        "chamber": chamber or "ALL",
     }
