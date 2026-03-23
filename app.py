@@ -104,7 +104,6 @@ defaults = {
     # Yargı state
     "y_search_results": None,
     "y_search_params": None,
-    "y_sort_by": "relevance",
     "y_page": 1,
     "y_expanded_id": None,    # which decision is expanded
     "y_expanded_data": None,  # the loaded decision content
@@ -205,18 +204,20 @@ with main_tab_mevzuat:
 
     # ── Mevzuat NL Search ────────────────────────────────────────────────────
     with m_sub_nl:
-        col_input, col_badge = st.columns([6, 1])
-        with col_input:
-            m_nl_input = st.text_input(
-                "Sorunuzu yazın",
-                placeholder="Örn: İş Kanunu'nda fazla mesai ücreti nasıl hesaplanır?",
-                label_visibility="collapsed",
-                key="m_nl_input",
-            )
-        with col_badge:
-            st.markdown('<span class="token-badge">~600 token</span>', unsafe_allow_html=True)
+        with st.form("m_nl_form", clear_on_submit=False):
+            col_input, col_badge = st.columns([6, 1])
+            with col_input:
+                m_nl_input = st.text_input(
+                    "Sorunuzu yazın",
+                    placeholder="Örn: İş Kanunu'nda fazla mesai ücreti nasıl hesaplanır?",
+                    label_visibility="collapsed",
+                    key="m_nl_input",
+                )
+            with col_badge:
+                st.markdown('<span class="token-badge">~600 token</span>', unsafe_allow_html=True)
+            m_nl_submitted = st.form_submit_button("🔍 Ara", use_container_width=True)
 
-        if m_nl_input:
+        if m_nl_submitted and m_nl_input:
             if not api_key:
                 st.error(
                     "Doğal dil araması için API anahtarı gereklidir. "
@@ -239,25 +240,28 @@ with main_tab_mevzuat:
 
     # ── Mevzuat Manual Search ────────────────────────────────────────────────
     with m_sub_manual:
-        st.markdown('<span class="token-badge">0 token</span>', unsafe_allow_html=True)
+        with st.form("m_manual_form", clear_on_submit=False):
+            st.markdown('<span class="token-badge">0 token</span>', unsafe_allow_html=True)
 
-        mcol1, mcol2 = st.columns(2)
-        with mcol1:
-            manual_phrase = st.text_input("İçerik Araması", placeholder="Örn: fazla mesai ücreti", key="m_phrase")
-            manual_number = st.text_input("Mevzuat No", placeholder="Örn: 4857", key="m_number")
-        with mcol2:
-            manual_title = st.text_input("Başlık Araması", placeholder="Örn: iş kanunu", key="m_title")
-            manual_exact = st.checkbox("Tam eşleşme", key="m_exact")
+            mcol1, mcol2 = st.columns(2)
+            with mcol1:
+                manual_phrase = st.text_input("İçerik Araması", placeholder="Örn: fazla mesai ücreti", key="m_phrase")
+                manual_number = st.text_input("Mevzuat No", placeholder="Örn: 4857", key="m_number")
+            with mcol2:
+                manual_title = st.text_input("Başlık Araması", placeholder="Örn: iş kanunu", key="m_title")
+                manual_exact = st.checkbox("Tam eşleşme", key="m_exact")
 
-        manual_types = st.multiselect(
-            "Mevzuat Türü",
-            options=list(MEVZUAT_TURLERI.keys()),
-            format_func=lambda x: MEVZUAT_TURLERI[x],
-            default=["KANUN"],
-            key="m_types",
-        )
+            manual_types = st.multiselect(
+                "Mevzuat Türü",
+                options=list(MEVZUAT_TURLERI.keys()),
+                format_func=lambda x: MEVZUAT_TURLERI[x],
+                default=["KANUN"],
+                key="m_types",
+            )
 
-        if st.button("🔍 Ara", key="m_manual_search", use_container_width=True):
+            m_manual_submitted = st.form_submit_button("🔍 Ara", use_container_width=True)
+
+        if m_manual_submitted:
             if not manual_phrase and not manual_title:
                 st.warning("Lütfen en az bir arama kriteri girin.")
             else:
@@ -479,18 +483,20 @@ with main_tab_yargi:
 
     # ── Yargı NL Search ──────────────────────────────────────────────────────
     with y_sub_nl:
-        col_input, col_badge = st.columns([6, 1])
-        with col_input:
-            y_nl_input = st.text_input(
-                "Sorunuzu yazın",
-                placeholder="Örn: İş kazası tazminatıyla ilgili Yargıtay kararları",
-                label_visibility="collapsed",
-                key="y_nl_input",
-            )
-        with col_badge:
-            st.markdown('<span class="token-badge">~600 token</span>', unsafe_allow_html=True)
+        with st.form("y_nl_form", clear_on_submit=False):
+            col_input, col_badge = st.columns([6, 1])
+            with col_input:
+                y_nl_input = st.text_input(
+                    "Sorunuzu yazın",
+                    placeholder="Örn: İş kazası tazminatıyla ilgili Yargıtay kararları",
+                    label_visibility="collapsed",
+                    key="y_nl_input",
+                )
+            with col_badge:
+                st.markdown('<span class="token-badge">~600 token</span>', unsafe_allow_html=True)
+            y_nl_submitted = st.form_submit_button("🔍 Ara", use_container_width=True)
 
-        if y_nl_input:
+        if y_nl_submitted and y_nl_input:
             if not api_key:
                 st.error(
                     "Doğal dil araması için API anahtarı gereklidir. "
@@ -513,51 +519,54 @@ with main_tab_yargi:
 
     # ── Yargı Manual Search ──────────────────────────────────────────────────
     with y_sub_manual:
-        st.markdown('<span class="token-badge">0 token</span>', unsafe_allow_html=True)
+        with st.form("y_manual_form", clear_on_submit=False):
+            st.markdown('<span class="token-badge">0 token</span>', unsafe_allow_html=True)
 
-        ycol1, ycol2 = st.columns(2)
-        with ycol1:
-            y_phrase = st.text_input(
-                "Arama",
-                placeholder="Örn: iş kazası tazminat",
-                key="y_phrase",
-            )
-        with ycol2:
-            y_court_types = st.multiselect(
-                "Mahkeme Türü",
-                options=list(COURT_TYPES.keys()),
-                format_func=lambda x: COURT_TYPES[x],
-                default=["YARGITAYKARARI", "DANISTAYKARAR"],
-                key="y_court_types",
-            )
+            ycol1, ycol2 = st.columns(2)
+            with ycol1:
+                y_phrase = st.text_input(
+                    "Arama",
+                    placeholder="Örn: iş kazası tazminat",
+                    key="y_phrase",
+                )
+            with ycol2:
+                y_court_types = st.multiselect(
+                    "Mahkeme Türü",
+                    options=list(COURT_TYPES.keys()),
+                    format_func=lambda x: COURT_TYPES[x],
+                    default=["YARGITAYKARARI", "DANISTAYKARAR"],
+                    key="y_court_types",
+                )
 
-        ycol3, ycol4 = st.columns(2)
-        with ycol3:
-            chamber_display = {"Tümü (filtre yok)": "ALL"}
-            for group_name, codes in CHAMBER_GROUPS.items():
-                if group_name == "Tümü":
-                    continue
-                for code in codes:
-                    full_name = CHAMBERS.get(code, code)
-                    if full_name:
-                        chamber_display[f"{full_name} ({code})"] = code
+            ycol3, ycol4 = st.columns(2)
+            with ycol3:
+                chamber_display = {"Tümü (filtre yok)": "ALL"}
+                for group_name, codes in CHAMBER_GROUPS.items():
+                    if group_name == "Tümü":
+                        continue
+                    for code in codes:
+                        full_name = CHAMBERS.get(code, code)
+                        if full_name:
+                            chamber_display[f"{full_name} ({code})"] = code
 
-            y_chamber = st.selectbox(
-                "Daire / Kurul",
-                options=list(chamber_display.keys()),
-                index=0,
-                key="y_chamber",
-            )
-            selected_chamber_code = chamber_display[y_chamber]
+                y_chamber = st.selectbox(
+                    "Daire / Kurul",
+                    options=list(chamber_display.keys()),
+                    index=0,
+                    key="y_chamber",
+                )
+                selected_chamber_code = chamber_display[y_chamber]
 
-        with ycol4:
-            y_date_col1, y_date_col2 = st.columns(2)
-            with y_date_col1:
-                y_date_start = st.date_input("Başlangıç Tarihi", value=None, key="y_date_start")
-            with y_date_col2:
-                y_date_end = st.date_input("Bitiş Tarihi", value=None, key="y_date_end")
+            with ycol4:
+                y_date_col1, y_date_col2 = st.columns(2)
+                with y_date_col1:
+                    y_date_start = st.date_input("Başlangıç Tarihi", value=None, key="y_date_start")
+                with y_date_col2:
+                    y_date_end = st.date_input("Bitiş Tarihi", value=None, key="y_date_end")
 
-        if st.button("🔍 Ara", key="y_manual_search", use_container_width=True):
+            y_manual_submitted = st.form_submit_button("🔍 Ara", use_container_width=True)
+
+        if y_manual_submitted:
             if not y_phrase:
                 st.warning("Lütfen bir arama terimi girin.")
             else:
@@ -579,29 +588,6 @@ with main_tab_yargi:
 
     # ── Yargı Display Area ───────────────────────────────────────────────────
     st.markdown("---")
-
-    # Sort toggle
-    if st.session_state["y_search_params"]:
-        sort_col, _ = st.columns([2, 4])
-        with sort_col:
-            y_sort_options = {"Alakaya göre": "relevance", "Tarihe göre (yeni → eski)": "date"}
-            current_y_sort = st.session_state.get("y_sort_by", "relevance")
-            current_y_label = [k for k, v in y_sort_options.items() if v == current_y_sort][0]
-            selected_y_sort = st.selectbox(
-                "Sıralama",
-                options=list(y_sort_options.keys()),
-                index=list(y_sort_options.keys()).index(current_y_label),
-                key="y_sort_select",
-            )
-            new_y_sort = y_sort_options[selected_y_sort]
-            if new_y_sort != st.session_state.get("y_sort_by", "relevance"):
-                st.session_state["y_sort_by"] = new_y_sort
-                with st.spinner("Yeniden sıralanıyor..."):
-                    try:
-                        do_yargi_search(st.session_state["y_search_params"], sort_by=new_y_sort)
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Arama hatası: {e}")
 
     # Search params display
     if st.session_state["y_search_params"]:
@@ -631,7 +617,7 @@ with main_tab_yargi:
             with st.spinner("Sayfa yükleniyor..."):
                 do_yargi_search(
                     st.session_state["y_search_params"],
-                    sort_by=st.session_state["y_sort_by"],
+                    sort_by="date",
                     page=new_page,
                 )
                 st.rerun()
@@ -704,7 +690,7 @@ with main_tab_yargi:
                 with st.spinner("Sayfa yükleniyor..."):
                     do_yargi_search(
                         st.session_state["y_search_params"],
-                        sort_by=st.session_state["y_sort_by"],
+                        sort_by="date",
                         page=new_page_bottom,
                     )
                     st.rerun()

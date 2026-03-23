@@ -179,10 +179,9 @@ def search_decisions(
         "phrase": _add_solr_prefix(phrase),
     }
 
-    # Only add sort fields for date sort; omitting lets Solr use relevance scoring
-    if sort_by == "date":
-        search_data["sortFields"] = ["KARAR_TARIHI"]
-        search_data["sortDirection"] = "desc"
+    # Always include sortFields — emsal-karar API may require it
+    search_data["sortFields"] = ["KARAR_TARIHI"]
+    search_data["sortDirection"] = "desc"
 
     # Chamber filter
     if chamber and chamber != "ALL":
