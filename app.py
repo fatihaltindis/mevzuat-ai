@@ -74,20 +74,26 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+# ── API Key: prefer Streamlit secret, fall back to manual input ──────────────
+_secret_key = st.secrets.get("GEMINI_API_KEY", None) if hasattr(st, "secrets") else None
+
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### ⚙️ Ayarlar")
 
-    api_key = st.text_input(
-        "Google Gemini API Anahtarı",
-        type="password",
-        help="Google AI Studio'dan ücretsiz API anahtarı alın",
-    )
-
-    st.markdown(
-        '[🔑 Ücretsiz API anahtarı al →](https://aistudio.google.com/apikey)',
-        unsafe_allow_html=True,
-    )
+    if _secret_key:
+        api_key = _secret_key
+        st.success("✅ API anahtarı yapılandırılmış", icon="🔑")
+    else:
+        api_key = st.text_input(
+            "Google Gemini API Anahtarı",
+            type="password",
+            help="Google AI Studio'dan ücretsiz API anahtarı alın",
+        )
+        st.markdown(
+            '[🔑 Ücretsiz API anahtarı al →](https://aistudio.google.com/apikey)',
+            unsafe_allow_html=True,
+        )
 
     st.markdown("---")
 
