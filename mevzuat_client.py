@@ -134,10 +134,6 @@ def get_document(mevzuat_id: str) -> dict:
     html = base64.b64decode(content_b64).decode("utf-8")
     text = _html_to_text(html)
 
-    # Truncate very long documents to fit in AI context
-    if len(text) > 15000:
-        text = text[:15000] + "\n\n... [Belge çok uzun, ilk 15.000 karakter gösterildi]"
-
     return {
         "mevzuatId": mevzuat_id,
         "content": text,
