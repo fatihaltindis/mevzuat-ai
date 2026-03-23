@@ -52,6 +52,21 @@ def _html_to_text(html: str) -> str:
     return text.strip()
 
 
+def _add_solr_prefix(phrase: str) -> str:
+    """Add Solr '+' prefix to each word to require all terms match.
+    Skips words that already have Solr operators (+, -, ~, ^, *)."""
+    if not phrase:
+        return phrase
+    words = phrase.split()
+    prefixed = []
+    for w in words:
+        if w[0] in "+-" or "*" in w or "~" in w or "^" in w:
+            prefixed.append(w)
+        else:
+            prefixed.append(f"+{w}")
+    return " ".join(prefixed)
+
+
 def search_legislation(
     phrase: str = None,
     title: str = None,
@@ -60,20 +75,25 @@ def search_legislation(
     exact: bool = False,
     page: int = 1,
     page_size: int = 10,
+    sort_by: str = "relevance",
 ) -> dict:
     """
     Search Turkish legislation.
     At least one of phrase or title must be provided.
     types: list of e.g. ["KANUN", "KHK", "YONETMELIK"]
+    sort_by: "relevance" (Solr default scoring) or "date" (R.G. date desc)
     """
     search_data = {
         "pageSize": page_size,
         "pageNumber": page,
-        "sortFields": ["RESMI_GAZETE_TARIHI"],
-        "sortDirection": "desc",
     }
+    # Only add sort fields for date sort; omitting lets Solr use relevance scoring
+    if sort_by == "date":
+        search_data["sortFields"] = ["RESMI_GAZETE_TARIHI"]
+        search_data["sortDirection"] = "desc"
+
     if phrase:
-        search_data["phrase"] = phrase
+        search_data["phrase"] = _add_solr_prefix(phrase)
     if title:
         search_data["mevzuatAdi"] = title
     if types:

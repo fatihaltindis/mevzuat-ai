@@ -42,6 +42,7 @@ st.markdown("""
     .main-header p { color: #4a5568; font-size: 0.95rem; margin: 0; }
     .search-params {
         background: #f0f4f8;
+        color: #1a202c;
         padding: 0.6rem 1rem;
         border-radius: 8px;
         border-left: 4px solid #3182ce;
@@ -53,14 +54,16 @@ st.markdown("""
         border-radius: 8px;
         padding: 0.75rem 1rem;
         margin-bottom: 0.5rem;
-        background: white;
+        background: #ffffff;
+        color: #1a202c;
     }
     .result-card:hover { border-color: #3182ce; }
     .result-title { font-weight: 600; color: #1a365d; font-size: 1rem; }
-    .result-meta { color: #718096; font-size: 0.85rem; margin-top: 0.2rem; }
-    .toc-item { padding: 0.3rem 0; border-bottom: 1px solid #f0f0f0; }
+    .result-meta { color: #4a5568; font-size: 0.85rem; margin-top: 0.2rem; }
+    .toc-item { padding: 0.3rem 0; border-bottom: 1px solid #f0f0f0; color: #1a202c; }
     .article-content {
-        background: #fafafa;
+        background: #ffffff;
+        color: #1a202c;
         padding: 1.5rem;
         border-radius: 8px;
         border: 1px solid #e2e8f0;
@@ -78,6 +81,7 @@ st.markdown("""
     }
     .sidebar-info {
         background: #f7fafc;
+        color: #1a202c;
         padding: 0.75rem;
         border-radius: 8px;
         border: 1px solid #e2e8f0;
@@ -159,6 +163,7 @@ defaults = {
     "article_content": None,
     "document_content": None,
     "search_history": [],
+    "sort_by": "relevance",
 }
 for key, val in defaults.items():
     if key not in st.session_state:
@@ -167,7 +172,7 @@ for key, val in defaults.items():
 
 # ── Helper functions ─────────────────────────────────────────────────────────
 
-def do_search(params: dict):
+def do_search(params: dict, sort_by: str = "relevance"):
     """Execute search and store results in session state."""
     result = search_legislation(
         phrase=params.get("phrase"),
@@ -175,6 +180,7 @@ def do_search(params: dict):
         types=params.get("types"),
         number=params.get("number"),
         exact=params.get("exact", False),
+        sort_by=sort_by,
     )
     st.session_state["search_results"] = result
     st.session_state["search_params"] = params
@@ -293,6 +299,29 @@ with tab_manual:
 
 # ── Display area (shared between tabs) ───────────────────────────────────────
 st.markdown("---")
+
+# Sort toggle + re-search
+if st.session_state["search_params"]:
+    sort_col, _ = st.columns([2, 4])
+    with sort_col:
+        sort_options = {"Alakaya göre": "relevance", "Tarihe göre (yeni → eski)": "date"}
+        current_sort = st.session_state.get("sort_by", "relevance")
+        current_label = [k for k, v in sort_options.items() if v == current_sort][0]
+        selected_sort_label = st.selectbox(
+            "Sıralama",
+            options=list(sort_options.keys()),
+            index=list(sort_options.keys()).index(current_label),
+            key="sort_select",
+        )
+        new_sort = sort_options[selected_sort_label]
+        if new_sort != st.session_state.get("sort_by", "relevance"):
+            st.session_state["sort_by"] = new_sort
+            with st.spinner("Yeniden sıralanıyor..."):
+                try:
+                    do_search(st.session_state["search_params"], sort_by=new_sort)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Arama hatası: {e}")
 
 # Show current search params
 if st.session_state["search_params"]:
