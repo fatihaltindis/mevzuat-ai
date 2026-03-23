@@ -4,6 +4,8 @@ Hâkimler ve avukatlar için mevzuat.gov.tr tabanlı hukuk araştırma aracı.
 AI yalnızca sorgu ayrıştırma için kullanılır (~600 token). Sonuçlar doğrudan API'den gösterilir.
 """
 
+import os
+import math
 import streamlit as st
 from mevzuat_client import search_legislation, get_document, get_article, get_article_tree
 from yargi_client import search_decisions, get_decision, COURT_TYPES, CHAMBERS, CHAMBER_GROUPS
@@ -19,6 +21,11 @@ st.set_page_config(
     layout="wide",
 )
 
+# ── Load CSS from file ───────────────────────────────────────────────────────
+_css_path = os.path.join(os.path.dirname(__file__), "style.css")
+with open(_css_path) as f:
+    st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+
 # ── Legislation type labels ──────────────────────────────────────────────────
 MEVZUAT_TURLERI = {
     "KANUN": "Kanun",
@@ -32,68 +39,7 @@ MEVZUAT_TURLERI = {
     "MULGA": "Mülga Kanun",
 }
 
-# ── Custom CSS ───────────────────────────────────────────────────────────────
-st.markdown("""
-<style>
-    .block-container { padding-top: 1rem; }
-    .main-header {
-        text-align: center;
-        padding: 1rem 0 0.75rem 0;
-        border-bottom: 2px solid #1a365d;
-        margin-bottom: 1rem;
-    }
-    .main-header h1 { color: #1a365d; font-size: 1.8rem; margin-bottom: 0.15rem; }
-    .main-header p { color: #4a5568; font-size: 0.95rem; margin: 0; }
-    .search-params {
-        background: #f0f4f8;
-        color: #1a202c;
-        padding: 0.6rem 1rem;
-        border-radius: 8px;
-        border-left: 4px solid #3182ce;
-        margin: 0.5rem 0;
-        font-size: 0.9rem;
-    }
-    .result-card {
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        padding: 0.75rem 1rem;
-        margin-bottom: 0.5rem;
-        background: #ffffff;
-        color: #1a202c;
-    }
-    .result-card:hover { border-color: #3182ce; }
-    .result-title { font-weight: 600; color: #1a365d; font-size: 1rem; }
-    .result-meta { color: #4a5568; font-size: 0.85rem; margin-top: 0.2rem; }
-    .toc-item { padding: 0.3rem 0; border-bottom: 1px solid #f0f0f0; color: #1a202c; }
-    .article-content {
-        background: #ffffff;
-        color: #1a202c;
-        padding: 1.5rem;
-        border-radius: 8px;
-        border: 1px solid #e2e8f0;
-        line-height: 1.8;
-        font-size: 0.95rem;
-        white-space: pre-wrap;
-    }
-    .token-badge {
-        background: #c6f6d5;
-        color: #22543d;
-        padding: 0.15rem 0.5rem;
-        border-radius: 10px;
-        font-size: 0.75rem;
-        font-weight: 600;
-    }
-    .sidebar-info {
-        background: #f7fafc;
-        color: #1a202c;
-        padding: 0.75rem;
-        border-radius: 8px;
-        border: 1px solid #e2e8f0;
-        font-size: 0.85rem;
-        line-height: 1.5;
-    }
-</style>
-""", unsafe_allow_html=True)
+PAGE_SIZE = 10
 
 # ── Header ───────────────────────────────────────────────────────────────────
 st.markdown("""
@@ -149,16 +95,19 @@ defaults = {
     # Mevzuat state
     "m_search_results": None,
     "m_search_params": None,
-    "m_selected_mevzuat": None,
-    "m_toc_data": None,
-    "m_article_content": None,
-    "m_document_content": None,
     "m_sort_by": "relevance",
+    "m_page": 1,
+    "m_expanded_id": None,    # which mevzuat result is expanded
+    "m_expanded_type": None,  # "toc", "doc", or "article"
+    "m_expanded_data": None,  # the loaded content
+    "m_toc_data": None,       # TOC for expanded mevzuat
     # Yargı state
     "y_search_results": None,
     "y_search_params": None,
-    "y_decision_content": None,
     "y_sort_by": "relevance",
+    "y_page": 1,
+    "y_expanded_id": None,    # which decision is expanded
+    "y_expanded_data": None,  # the loaded decision content
 }
 for key, val in defaults.items():
     if key not in st.session_state:
@@ -169,7 +118,7 @@ for key, val in defaults.items():
 # MEVZUAT HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
 
-def do_mevzuat_search(params: dict, sort_by: str = "relevance"):
+def do_mevzuat_search(params: dict, sort_by: str = "relevance", page: int = 1):
     """Execute mevzuat search and store results."""
     result = search_legislation(
         phrase=params.get("phrase"),
@@ -178,40 +127,23 @@ def do_mevzuat_search(params: dict, sort_by: str = "relevance"):
         number=params.get("number"),
         exact=params.get("exact", False),
         sort_by=sort_by,
+        page=page,
+        page_size=PAGE_SIZE,
     )
     st.session_state["m_search_results"] = result
     st.session_state["m_search_params"] = params
-    st.session_state["m_selected_mevzuat"] = None
+    st.session_state["m_page"] = page
+    st.session_state["m_expanded_id"] = None
+    st.session_state["m_expanded_type"] = None
+    st.session_state["m_expanded_data"] = None
     st.session_state["m_toc_data"] = None
-    st.session_state["m_article_content"] = None
-    st.session_state["m_document_content"] = None
-
-
-def load_toc(mevzuat_id: str, mevzuat_name: str):
-    toc = get_article_tree(mevzuat_id)
-    st.session_state["m_toc_data"] = toc
-    st.session_state["m_selected_mevzuat"] = {"id": mevzuat_id, "name": mevzuat_name}
-    st.session_state["m_article_content"] = None
-    st.session_state["m_document_content"] = None
-
-
-def load_article(madde_id: str):
-    article = get_article(madde_id)
-    st.session_state["m_article_content"] = article
-    st.session_state["m_document_content"] = None
-
-
-def load_document(mevzuat_id: str):
-    doc = get_document(mevzuat_id)
-    st.session_state["m_document_content"] = doc
-    st.session_state["m_article_content"] = None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # YARGI HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
 
-def do_yargi_search(params: dict, sort_by: str = "relevance"):
+def do_yargi_search(params: dict, sort_by: str = "relevance", page: int = 1):
     """Execute yargı search and store results."""
     result = search_decisions(
         phrase=params.get("phrase"),
@@ -220,15 +152,41 @@ def do_yargi_search(params: dict, sort_by: str = "relevance"):
         date_start=params.get("date_start"),
         date_end=params.get("date_end"),
         sort_by=sort_by,
+        page=page,
+        page_size=PAGE_SIZE,
     )
     st.session_state["y_search_results"] = result
     st.session_state["y_search_params"] = params
-    st.session_state["y_decision_content"] = None
+    st.session_state["y_page"] = page
+    st.session_state["y_expanded_id"] = None
+    st.session_state["y_expanded_data"] = None
 
 
-def load_decision(document_id: str):
-    decision = get_decision(document_id)
-    st.session_state["y_decision_content"] = decision
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGINATION HELPER
+# ══════════════════════════════════════════════════════════════════════════════
+
+def render_pagination(total: int, current_page: int, page_size: int, key_prefix: str):
+    """Render prev/next pagination and return new page if changed, else None."""
+    total_pages = max(1, math.ceil(total / page_size))
+
+    col_prev, col_info, col_next = st.columns([1, 2, 1])
+    with col_info:
+        st.markdown(
+            f'<div class="pagination-info" style="text-align:center;">'
+            f'Sayfa {current_page} / {total_pages} ({total} sonuç)'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+    with col_prev:
+        if current_page > 1:
+            if st.button("← Önceki", key=f"{key_prefix}_prev", use_container_width=True):
+                return current_page - 1
+    with col_next:
+        if current_page < total_pages:
+            if st.button("Sonraki →", key=f"{key_prefix}_next", use_container_width=True):
+                return current_page + 1
+    return None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -363,8 +321,18 @@ with main_tab_mevzuat:
         results = st.session_state["m_search_results"]
         docs = results.get("documents", [])
         total = results.get("totalRecords", 0)
+        current_page = st.session_state["m_page"]
 
-        st.markdown(f"**{total} sonuç bulundu** (sayfa {results.get('page', 1)})")
+        # Top pagination
+        new_page = render_pagination(total, current_page, PAGE_SIZE, "m_top")
+        if new_page:
+            with st.spinner("Sayfa yükleniyor..."):
+                do_mevzuat_search(
+                    st.session_state["m_search_params"],
+                    sort_by=st.session_state["m_sort_by"],
+                    page=new_page,
+                )
+                st.rerun()
 
         if not docs:
             st.info("Aramanızla eşleşen mevzuat bulunamadı. Farklı anahtar kelimelerle tekrar deneyin.")
@@ -395,7 +363,11 @@ with main_tab_mevzuat:
                             if st.button("📑 İçindekiler", key=f"toc_{i}_{mevzuat_id}"):
                                 with st.spinner("İçindekiler yükleniyor..."):
                                     try:
-                                        load_toc(mevzuat_id, name)
+                                        toc = get_article_tree(mevzuat_id)
+                                        st.session_state["m_expanded_id"] = mevzuat_id
+                                        st.session_state["m_expanded_type"] = "toc"
+                                        st.session_state["m_toc_data"] = toc
+                                        st.session_state["m_expanded_data"] = {"name": name}
                                         st.rerun()
                                     except Exception as e:
                                         st.error(f"Hata: {e}")
@@ -403,76 +375,90 @@ with main_tab_mevzuat:
                             if st.button("📄 Tam Metin", key=f"doc_{i}_{mevzuat_id}"):
                                 with st.spinner("Belge yükleniyor..."):
                                     try:
-                                        load_document(mevzuat_id)
-                                        load_toc(mevzuat_id, name)
+                                        doc_content = get_document(mevzuat_id)
+                                        toc = get_article_tree(mevzuat_id)
+                                        st.session_state["m_expanded_id"] = mevzuat_id
+                                        st.session_state["m_expanded_type"] = "doc"
+                                        st.session_state["m_expanded_data"] = doc_content
+                                        st.session_state["m_toc_data"] = toc
                                         st.rerun()
                                     except Exception as e:
                                         st.error(f"Hata: {e}")
 
-    # Table of contents
-    if st.session_state["m_toc_data"] and st.session_state["m_selected_mevzuat"]:
-        st.markdown("---")
-        mevzuat_info = st.session_state["m_selected_mevzuat"]
-        toc = st.session_state["m_toc_data"]
+                    # ── Inline expanded content (right below this result) ────
+                    if st.session_state["m_expanded_id"] == mevzuat_id:
+                        exp_type = st.session_state["m_expanded_type"]
+                        exp_data = st.session_state["m_expanded_data"]
+                        toc_data = st.session_state.get("m_toc_data")
 
-        st.markdown(f"### 📑 {mevzuat_info['name']} — İçindekiler")
+                        # Show TOC
+                        if toc_data and exp_type in ("toc", "doc", "article"):
+                            with st.expander(f"📑 {name} — İçindekiler", expanded=(exp_type == "toc")):
+                                if "error" in toc_data:
+                                    st.error(f"İçindekiler yüklenemedi: {toc_data['error']}")
+                                else:
+                                    tree = toc_data.get("tree", [])
+                                    if not tree:
+                                        st.info("Bu mevzuat için içindekiler bulunamadı.")
+                                    else:
+                                        for j, node in enumerate(tree):
+                                            madde_id = node.get("maddeId")
+                                            madde_no = node.get("maddeNo", "")
+                                            title = node.get("title", "")
+                                            depth = node.get("depth", 0)
+                                            indent = "→ " * depth
 
-        if "error" in toc:
-            st.error(f"İçindekiler yüklenemedi: {toc['error']}")
-        else:
-            tree = toc.get("tree", [])
-            if not tree:
-                st.info("Bu mevzuat için içindekiler bulunamadı.")
-            else:
-                for j, node in enumerate(tree):
-                    madde_id = node.get("maddeId")
-                    madde_no = node.get("maddeNo", "")
-                    title = node.get("title", "")
-                    depth = node.get("depth", 0)
-                    indent = "→ " * depth
+                                            col_title, col_btn = st.columns([5, 1])
+                                            with col_title:
+                                                label = f"{indent}**{madde_no}** {title}" if madde_no else f"{indent}{title}"
+                                                st.markdown(label)
+                                            with col_btn:
+                                                if madde_id:
+                                                    if st.button("Göster", key=f"art_{i}_{j}_{madde_id}"):
+                                                        with st.spinner("Madde yükleniyor..."):
+                                                            try:
+                                                                article = get_article(madde_id)
+                                                                st.session_state["m_expanded_type"] = "article"
+                                                                st.session_state["m_expanded_data"] = article
+                                                                st.rerun()
+                                                            except Exception as e:
+                                                                st.error(f"Hata: {e}")
 
-                    col_title, col_btn = st.columns([5, 1])
-                    with col_title:
-                        label = f"{indent}**{madde_no}** {title}" if madde_no else f"{indent}{title}"
-                        st.markdown(label)
-                    with col_btn:
-                        if madde_id:
-                            if st.button("Göster", key=f"art_{j}_{madde_id}"):
-                                with st.spinner("Madde yükleniyor..."):
-                                    try:
-                                        load_article(madde_id)
-                                        st.rerun()
-                                    except Exception as e:
-                                        st.error(f"Hata: {e}")
+                        # Show article content
+                        if exp_type == "article" and exp_data:
+                            with st.expander("📄 Madde Metni", expanded=True):
+                                if "error" in exp_data:
+                                    st.error(f"Madde yüklenemedi: {exp_data['error']}")
+                                else:
+                                    st.markdown(
+                                        f'<div class="article-content">{exp_data.get("content", "İçerik bulunamadı.")}</div>',
+                                        unsafe_allow_html=True,
+                                    )
 
-    # Article content
-    if st.session_state["m_article_content"]:
-        st.markdown("---")
-        article = st.session_state["m_article_content"]
-        if "error" in article:
-            st.error(f"Madde yüklenemedi: {article['error']}")
-        else:
-            st.markdown("### 📄 Madde Metni")
-            st.markdown(
-                f'<div class="article-content">{article.get("content", "İçerik bulunamadı.")}</div>',
-                unsafe_allow_html=True,
-            )
+                        # Show full document
+                        if exp_type == "doc" and exp_data and "content" in exp_data:
+                            with st.expander("📄 Tam Metin", expanded=True):
+                                if "error" in exp_data:
+                                    st.error(f"Belge yüklenemedi: {exp_data['error']}")
+                                else:
+                                    st.markdown(
+                                        f'<div class="article-content">{exp_data.get("content", "İçerik bulunamadı.")}</div>',
+                                        unsafe_allow_html=True,
+                                    )
 
-    # Full document content
-    if st.session_state["m_document_content"]:
-        st.markdown("---")
-        doc = st.session_state["m_document_content"]
-        if "error" in doc:
-            st.error(f"Belge yüklenemedi: {doc['error']}")
-        else:
-            st.markdown("### 📄 Tam Metin")
-            st.markdown(
-                f'<div class="article-content">{doc.get("content", "İçerik bulunamadı.")}</div>',
-                unsafe_allow_html=True,
-            )
+            # Bottom pagination
+            new_page_bottom = render_pagination(total, current_page, PAGE_SIZE, "m_bottom")
+            if new_page_bottom:
+                with st.spinner("Sayfa yükleniyor..."):
+                    do_mevzuat_search(
+                        st.session_state["m_search_params"],
+                        sort_by=st.session_state["m_sort_by"],
+                        page=new_page_bottom,
+                    )
+                    st.rerun()
 
     # Mevzuat empty state
-    if not st.session_state["m_search_results"] and not st.session_state["m_article_content"]:
+    if not st.session_state["m_search_results"]:
         st.markdown("""
         <div style="text-align:center; padding: 2rem 1rem; color: #718096;">
             <p style="font-size: 2.5rem;">📜</p>
@@ -547,7 +533,6 @@ with main_tab_yargi:
 
         ycol3, ycol4 = st.columns(2)
         with ycol3:
-            # Build flat chamber list for selectbox
             chamber_display = {"Tümü (filtre yok)": "ALL"}
             for group_name, codes in CHAMBER_GROUPS.items():
                 if group_name == "Tümü":
@@ -638,8 +623,18 @@ with main_tab_yargi:
         results = st.session_state["y_search_results"]
         decisions = results.get("decisions", [])
         total = results.get("totalRecords", 0)
+        current_page = st.session_state["y_page"]
 
-        st.markdown(f"**{total} karar bulundu** (sayfa {results.get('page', 1)})")
+        # Top pagination
+        new_page = render_pagination(total, current_page, PAGE_SIZE, "y_top")
+        if new_page:
+            with st.spinner("Sayfa yükleniyor..."):
+                do_yargi_search(
+                    st.session_state["y_search_params"],
+                    sort_by=st.session_state["y_sort_by"],
+                    page=new_page,
+                )
+                st.rerun()
 
         if not decisions:
             st.info("Aramanızla eşleşen karar bulunamadı. Farklı anahtar kelimelerle tekrar deneyin.")
@@ -680,29 +675,42 @@ with main_tab_yargi:
                         if st.button("📄 Oku", key=f"ydoc_{i}_{doc_id}"):
                             with st.spinner("Karar yükleniyor..."):
                                 try:
-                                    load_decision(doc_id)
+                                    decision_data = get_decision(doc_id)
+                                    st.session_state["y_expanded_id"] = doc_id
+                                    st.session_state["y_expanded_data"] = decision_data
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Hata: {e}")
 
-    # Decision content
-    if st.session_state["y_decision_content"]:
-        st.markdown("---")
-        decision = st.session_state["y_decision_content"]
-        if "error" in decision:
-            st.error(f"Karar yüklenemedi: {decision['error']}")
-        else:
-            st.markdown("### 📄 Karar Metni")
-            source_url = decision.get("sourceUrl", "")
-            if source_url:
-                st.markdown(f"[Kaynağa git →]({source_url})")
-            st.markdown(
-                f'<div class="article-content">{decision.get("content", "İçerik bulunamadı.")}</div>',
-                unsafe_allow_html=True,
-            )
+                    # ── Inline decision content (right below this result) ────
+                    if st.session_state["y_expanded_id"] == doc_id:
+                        exp_data = st.session_state["y_expanded_data"]
+                        if exp_data:
+                            with st.expander("📄 Karar Metni", expanded=True):
+                                if "error" in exp_data:
+                                    st.error(f"Karar yüklenemedi: {exp_data['error']}")
+                                else:
+                                    source_url = exp_data.get("sourceUrl", "")
+                                    if source_url:
+                                        st.markdown(f"[Kaynağa git →]({source_url})")
+                                    st.markdown(
+                                        f'<div class="article-content">{exp_data.get("content", "İçerik bulunamadı.")}</div>',
+                                        unsafe_allow_html=True,
+                                    )
+
+            # Bottom pagination
+            new_page_bottom = render_pagination(total, current_page, PAGE_SIZE, "y_bottom")
+            if new_page_bottom:
+                with st.spinner("Sayfa yükleniyor..."):
+                    do_yargi_search(
+                        st.session_state["y_search_params"],
+                        sort_by=st.session_state["y_sort_by"],
+                        page=new_page_bottom,
+                    )
+                    st.rerun()
 
     # Yargı empty state
-    if not st.session_state["y_search_results"] and not st.session_state["y_decision_content"]:
+    if not st.session_state["y_search_results"]:
         st.markdown("""
         <div style="text-align:center; padding: 2rem 1rem; color: #718096;">
             <p style="font-size: 2.5rem;">⚖️</p>

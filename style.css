@@ -1,0 +1,70 @@
+.block-container { padding-top: 1rem; }
+
+.main-header {
+    text-align: center;
+    padding: 1rem 0 0.75rem 0;
+    border-bottom: 2px solid #1a365d;
+    margin-bottom: 1rem;
+}
+.main-header h1 { color: #1a365d; font-size: 1.8rem; margin-bottom: 0.15rem; }
+.main-header p { color: #4a5568; font-size: 0.95rem; margin: 0; }
+
+.search-params {
+    background: #f0f4f8;
+    color: #1a202c;
+    padding: 0.6rem 1rem;
+    border-radius: 8px;
+    border-left: 4px solid #3182ce;
+    margin: 0.5rem 0;
+    font-size: 0.9rem;
+}
+
+.result-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.5rem;
+    background: #ffffff;
+    color: #1a202c;
+}
+.result-card:hover { border-color: #3182ce; }
+.result-title { font-weight: 600; color: #1a365d; font-size: 1rem; }
+.result-meta { color: #4a5568; font-size: 0.85rem; margin-top: 0.2rem; }
+
+.toc-item { padding: 0.3rem 0; border-bottom: 1px solid #f0f0f0; color: #1a202c; }
+
+.article-content {
+    background: #ffffff;
+    color: #1a202c;
+    padding: 1.5rem;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    line-height: 1.8;
+    font-size: 0.95rem;
+    white-space: pre-wrap;
+}
+
+.token-badge {
+    background: #c6f6d5;
+    color: #22543d;
+    padding: 0.15rem 0.5rem;
+    border-radius: 10px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.sidebar-info {
+    background: #f7fafc;
+    color: #1a202c;
+    padding: 0.75rem;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+
+.pagination-info {
+    color: #4a5568;
+    font-size: 0.85rem;
+    padding: 0.5rem 0;
+}
